@@ -1,0 +1,9 @@
+{
+  "alerts": [],
+  "settings": {
+    "telegramToken": "",
+    "telegramChatId": "",
+    "soundEnabled": true
+  },
+  "fired": []
+}

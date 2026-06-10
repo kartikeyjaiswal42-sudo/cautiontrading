@@ -1,0 +1,13 @@
+{
+  "name": "cautiontrading",
+  "version": "1.0.0",
+  "description": "Live technical-indicator alerts for Delta Exchange — in-app alarm + Telegram",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "lightweight-charts": "^5.2.0"
+  }
+}
