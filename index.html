@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CautionTrading — Charts & Alerts</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='80' font-size='80'%3E%F0%9F%94%94%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="vendor/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-dot"></span>
+    <h1>CautionTrading</h1>
+  </div>
+
+  <button id="symbol-btn" class="symbol-btn" title="Change symbol">
+    <span id="sb-name">BTCUSD</span>
+    <span class="sb-caret">▾</span>
+  </button>
+
+  <div class="quote">
+    <span id="q-price" class="q-price">—</span>
+    <span id="q-chg" class="q-chg">—</span>
+  </div>
+
+  <div id="interval-pills" class="pills"></div>
+
+  <div class="topbar-right">
+    <span id="conn" class="conn conn-off">● connecting…</span>
+    <button id="btn-sound" class="btn btn-ghost" title="Enable alarm sound">🔇 Sound</button>
+    <button id="btn-settings" class="btn btn-ghost">⚙️</button>
+    <button id="btn-new" class="btn btn-primary">+ Alert</button>
+  </div>
+</header>
+
+<div class="main">
+  <div class="chart-area">
+    <div id="legend" class="legend"></div>
+    <div id="chart"></div>
+  </div>
+
+  <aside class="side">
+    <div class="side-tabs">
+      <button class="stab active" data-tab="alerts">Alerts <span id="alert-count" class="cnt"></span></button>
+      <button class="stab" data-tab="log">Triggered Log</button>
+    </div>
+    <div id="alerts-list" class="side-list"><div class="empty">Loading…</div></div>
+    <div id="fired-list" class="side-list hidden"><div class="empty">Nothing triggered yet.</div></div>
+  </aside>
+</div>
+
+<!-- ======== Symbol browser ======== -->
+<div id="symbol-modal" class="modal hidden">
+  <div class="modal-box wide">
+    <div class="modal-head">
+      <h2>Select Symbol</h2>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="sym-tools">
+      <input id="sym-search" type="text" placeholder="Search all symbols… (BTC, ETH, SOL, C-BTC-…)" autocomplete="off">
+      <div class="pills" id="sym-tabs">
+        <button class="pill active" data-cat="perp">Perpetuals</button>
+        <button class="pill" data-cat="fut">Futures</button>
+        <button class="pill" data-cat="opt">Options</button>
+        <button class="pill" data-cat="all">All</button>
+      </div>
+    </div>
+    <div class="sym-head">
+      <span>Symbol</span><span>Description</span><span class="r">Last Price</span><span class="r">24h %</span>
+    </div>
+    <div id="sym-list" class="sym-list"><div class="empty">Loading symbols…</div></div>
+  </div>
+</div>
+
+<!-- ======== New / Edit alert ======== -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="modal-title">Create Alert</h2>
+      <button class="x" data-close>✕</button>
+    </div>
+
+    <div class="form">
+      <div class="row2">
+        <div>
+          <label class="flabel">Symbol</label>
+          <button id="f-symbol-btn" class="field-btn">BTCUSD</button>
+        </div>
+        <div>
+          <label class="flabel">Interval</label>
+          <select id="f-resolution"></select>
+        </div>
+      </div>
+
+      <div class="cond-box">
+        <div class="cond-title">Condition <span class="muted" id="ind-count"></span></div>
+
+        <label class="flabel">Watch</label>
+        <div id="ip-left"></div>
+        <div id="f-left-params" class="params"></div>
+
+        <label class="flabel">Is</label>
+        <select id="f-op"></select>
+
+        <label class="flabel">Compared to</label>
+        <div class="row2">
+          <select id="f-right-kind">
+            <option value="value">A fixed value</option>
+            <option value="indicator">Another indicator</option>
+          </select>
+          <input id="f-right-value" type="number" step="any" placeholder="e.g. 70">
+        </div>
+        <div id="f-right-ind" class="hidden">
+          <div id="ip-right"></div>
+          <div id="f-right-params" class="params"></div>
+        </div>
+
+        <div id="preview" class="preview muted">—</div>
+      </div>
+
+      <div class="row2">
+        <div>
+          <label class="flabel">Trigger</label>
+          <select id="f-trigger">
+            <option value="once">Only once (then stops)</option>
+            <option value="once_per_bar">Once per bar close</option>
+            <option value="every">Every time (max 1/min)</option>
+          </select>
+        </div>
+        <div>
+          <label class="flabel">Expiration (optional)</label>
+          <input id="f-expires" type="datetime-local">
+        </div>
+      </div>
+
+      <label class="flabel">Message (what the notification says)</label>
+      <input id="f-message" type="text" placeholder="e.g. BTC RSI crossed 70 — check short setup">
+
+      <div>
+        <label class="flabel">Notify via</label>
+        <div class="checks">
+          <label><input id="f-ch-app" type="checkbox" checked> App alarm</label>
+          <label><input id="f-ch-tg" type="checkbox"> Telegram</label>
+        </div>
+      </div>
+
+      <div id="form-error" class="form-error hidden"></div>
+
+      <div class="modal-actions">
+        <button class="btn btn-ghost" data-close>Cancel</button>
+        <button id="btn-save" class="btn btn-primary">Save Alert</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== Settings ======== -->
+<div id="settings-modal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>Settings</h2>
+      <button class="x" data-close>✕</button>
+    </div>
+    <div class="form">
+      <h3 class="sec-title">📱 Telegram (instant phone notifications — free)</h3>
+      <ol class="help">
+        <li>On the phone, open Telegram and search <b>@BotFather</b></li>
+        <li>Send <code>/newbot</code>, pick any name → BotFather replies with a <b>token</b></li>
+        <li>Paste the token below and Save</li>
+        <li>Open your new bot in Telegram, send it any message (e.g. "hi")</li>
+        <li>Click <b>Detect my chat</b> below, then <b>Send test</b></li>
+      </ol>
+      <label class="flabel">Bot token</label>
+      <input id="s-token" type="text" placeholder="123456789:AAH...">
+      <label class="flabel">Chat ID</label>
+      <div class="row2">
+        <input id="s-chat" type="text" placeholder="auto-filled by Detect">
+        <button id="btn-detect" class="btn btn-ghost">Detect my chat</button>
+      </div>
+      <div class="row2">
+        <button id="btn-save-settings" class="btn btn-primary">Save</button>
+        <button id="btn-tg-test" class="btn btn-ghost">Send test message</button>
+      </div>
+      <div id="settings-status" class="muted"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ======== Full-screen alarm ======== -->
+<div id="alarm" class="alarm hidden">
+  <div class="alarm-inner">
+    <div class="alarm-icon">🔔</div>
+    <div id="alarm-msg" class="alarm-msg"></div>
+    <div id="alarm-detail" class="alarm-detail"></div>
+    <button id="alarm-stop" class="btn btn-alarm">STOP ALARM</button>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
