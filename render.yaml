@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: cautiontrading
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: TURSO_DB_URL
+        sync: false
+      - key: TURSO_DB_TOKEN
+        sync: false

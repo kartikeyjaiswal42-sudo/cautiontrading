@@ -257,6 +257,10 @@ setInterval(engineTick, CHECK_INTERVAL_MS);
 
 // ---------------- REST API ----------------
 
+app.get("/api/health", (req, res) => {
+  res.json({ ok: true, ts: Date.now() });
+});
+
 app.get("/api/meta", (req, res) => {
   res.json({
     indicators: indicatorMeta(),

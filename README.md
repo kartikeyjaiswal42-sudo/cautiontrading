@@ -60,7 +60,8 @@ The browser tab can be on any device on the same Wi-Fi
 - Data source: Delta Exchange public candles API (the same exchange the trades
   happen on, so values match the trading screen). Symbols like USOIL that are
   TradingView-only are not available — use the Delta equivalent.
-- Everything is saved in `data/store.json` — back that file up to keep alerts.
+- Data persists in **Turso** (cloud SQLite) when `TURSO_DB_URL` is set; locally also
+  seeds from `data/store.json` on first run. Back up Turso or export alerts periodically.
 
 ## Architecture (for future work)
 
@@ -69,8 +70,17 @@ The browser tab can be on any device on the same Wi-Fi
 | `server.js` | Express API + 1s engine loop + SSE push + Telegram |
 | `indicators.js` | 25 indicator implementations + registry that auto-builds the UI form |
 | `engine.js` | condition evaluation (crossings, edge-triggered >/<, trigger modes) |
-| `store.js` | JSON persistence (alerts, settings, fired log) |
+| `store.js` | Turso DB persistence (alerts, settings, fired log) + local JSON migration |
 | `public/` | single-page UI |
 
-To run it 24/7 in the cloud later (so the Mac doesn't need to stay on),
-deploy this folder to Render/Railway — it's a plain Node app, no database needed.
+To run it 24/7 in the cloud (so the Mac doesn't need to stay on), deploy to
+**Render** — it's a plain Node app with Turso (libSQL) for persistent alerts:
+
+1. Push this repo to GitHub (`kartikeyjaiswal42-sudo/cautiontrading`)
+2. On [render.com](https://render.com) → **New → Blueprint** → connect the repo
+3. Set env vars from `.env.example`: `TURSO_DB_URL` + `TURSO_DB_TOKEN`
+4. Deploy — live URL will be `https://cautiontrading.onrender.com` (or similar)
+
+Local Turso setup: copy `.env.example` → `.env`, fill in your Turso DB URL + token
+(`turso db show cautiontrading` / `turso db tokens create cautiontrading`).
+Alerts migrate automatically from `data/store.json` on first Turso connect.

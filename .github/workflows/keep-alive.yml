@@ -1,0 +1,17 @@
+name: Keep CautionTrading alive on Render
+
+on:
+  schedule:
+    - cron: "*/14 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Health check
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://cautiontrading.onrender.com/api/health" || echo "000")
+          echo "HTTP $code"
+          if [ "$code" != "200" ]; then exit 1; fi
