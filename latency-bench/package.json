@@ -1,0 +1,17 @@
+{
+  "name": "cautiontrading-latency-bench",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Latency benchmark for CautionTrading vs official market data APIs",
+  "main": "latency-check.js",
+  "scripts": {
+    "start": "node latency-check.js",
+    "check": "node latency-check.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}
