@@ -227,67 +227,73 @@ function load() {
   return state;
 }
 
+async function flushSave() {
+  if (!client || !state) return;
+  const tx = [];
+
+  tx.push({
+    sql: "INSERT OR REPLACE INTO settings (key, value) VALUES ('telegramToken', ?), ('telegramChatId', ?), ('soundEnabled', ?)",
+    args: [
+      state.settings.telegramToken || "",
+      state.settings.telegramChatId || "",
+      String(state.settings.soundEnabled ?? true),
+    ],
+  });
+
+  const ids = state.alerts.map(a => a.id);
+  if (ids.length > 0) {
+    const placeholders = ids.map(() => "?").join(",");
+    tx.push({
+      sql: `DELETE FROM alerts WHERE id NOT IN (${placeholders})`,
+      args: ids,
+    });
+  } else {
+    tx.push({ sql: "DELETE FROM alerts", args: [] });
+  }
+
+  for (const alert of state.alerts) {
+    tx.push({
+      sql: `INSERT OR REPLACE INTO alerts (id, createdAt, symbol, resolution, left, op, right, "trigger", message, expiresAt, channels, enabled, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [
+        alert.id,
+        alert.createdAt,
+        alert.symbol,
+        alert.resolution,
+        JSON.stringify(alert.left),
+        alert.op,
+        JSON.stringify(alert.right),
+        alert.trigger,
+        alert.message || "",
+        alert.expiresAt,
+        JSON.stringify(alert.channels),
+        alert.enabled ? 1 : 0,
+        alert.status,
+      ],
+    });
+  }
+
+  await client.batch(tx, "write");
+}
+
 function save() {
-  if (!client) return;
-  // debounce writes to Turso
-  if (saveTimer) return;
-  saveTimer = setTimeout(async () => {
-    saveTimer = null;
-    try {
-      const tx = [];
-
-      // 1. Save Settings
-      tx.push({
-        sql: "INSERT OR REPLACE INTO settings (key, value) VALUES ('telegramToken', ?), ('telegramChatId', ?), ('soundEnabled', ?)",
-        args: [
-          state.settings.telegramToken || "",
-          state.settings.telegramChatId || "",
-          String(state.settings.soundEnabled ?? true)
-        ]
-      });
-
-      // 2. Sync Alerts (delete what is not in memory, insert/replace active ones)
-      const ids = state.alerts.map(a => a.id);
-      if (ids.length > 0) {
-        const placeholders = ids.map(() => "?").join(",");
-        tx.push({
-          sql: `DELETE FROM alerts WHERE id NOT IN (${placeholders})`,
-          args: ids
-        });
-      } else {
-        tx.push({
-          sql: "DELETE FROM alerts",
-          args: []
-        });
+  if (!client || !state) return Promise.resolve();
+  // Workers: debounced setTimeout often never runs after the response is sent
+  if (process.env.TURSO_HTTP === "1") {
+    return flushSave().catch(e => console.error("store save to Turso failed:", e.message));
+  }
+  if (saveTimer) return Promise.resolve();
+  return new Promise(resolve => {
+    saveTimer = setTimeout(async () => {
+      saveTimer = null;
+      try {
+        await flushSave();
+      } catch (e) {
+        console.error("store save to Turso failed:", e.message);
       }
-
-      for (const alert of state.alerts) {
-        tx.push({
-          sql: `INSERT OR REPLACE INTO alerts (id, createdAt, symbol, resolution, left, op, right, "trigger", message, expiresAt, channels, enabled, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [
-            alert.id,
-            alert.createdAt,
-            alert.symbol,
-            alert.resolution,
-            JSON.stringify(alert.left),
-            alert.op,
-            JSON.stringify(alert.right),
-            alert.trigger,
-            alert.message || "",
-            alert.expiresAt,
-            JSON.stringify(alert.channels),
-            alert.enabled ? 1 : 0,
-            alert.status
-          ]
-        });
-      }
-
-      await client.batch(tx, "write");
-    } catch (e) {
-      console.error("store save to Turso failed:", e.message);
-    }
-  }, 300);
+      resolve();
+    }, 300);
+  });
 }
 
 async function addFired(rec) {

@@ -155,7 +155,7 @@ async function engineTick() {
     for (const a of active) {
       if (a.expiresAt && now > a.expiresAt) {
         a.status = "expired";
-        store.save();
+        await store.save();
       }
     }
 
@@ -208,7 +208,7 @@ async function engineTick() {
             store.addFired(rec);
             if (a.trigger === "once") {
               a.status = "fired";
-              store.save();
+              await store.save();
             }
             console.log(`[FIRED] ${describeAlert(a)} @ ${fmtNum(r.leftValue)}`);
             if (!a.channels || a.channels.app !== false) ssePush("alert", rec);

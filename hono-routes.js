@@ -242,7 +242,7 @@ hono.post("/api/alerts", async (c) => {
   const s = store.load();
   const alert = alertFromBody(body);
   s.alerts.push(alert);
-  store.save();
+  await store.save();
   engineTick(); // evaluate immediately
   return c.json({ ok: true, alert });
 });
@@ -257,12 +257,12 @@ hono.put("/api/alerts/:id", async (c) => {
   const updated = alertFromBody(body, s.alerts[idx]);
   s.alerts[idx] = updated;
   runtimeState.delete(updated.id); // reset edge state after edit
-  store.save();
+  await store.save();
   engineTick();
   return c.json({ ok: true, alert: updated });
 });
 
-hono.post("/api/alerts/:id/toggle", (c) => {
+hono.post("/api/alerts/:id/toggle", async (c) => {
   const s = store.load();
   const a = s.alerts.find(x => x.id === c.req.param('id'));
   if (!a) return c.json({ ok: false, error: "Alert not found" }, 404);
@@ -271,18 +271,18 @@ hono.post("/api/alerts/:id/toggle", (c) => {
     a.status = "active"; // re-arming a fired/expired alert reactivates it
     runtimeState.delete(a.id);
   }
-  store.save();
+  await store.save();
   if (a.enabled) engineTick();
   return c.json({ ok: true, alert: a });
 });
 
-hono.delete("/api/alerts/:id", (c) => {
+hono.delete("/api/alerts/:id", async (c) => {
   const s = store.load();
   const idx = s.alerts.findIndex(a => a.id === c.req.param('id'));
   if (idx === -1) return c.json({ ok: false, error: "Alert not found" }, 404);
   s.alerts.splice(idx, 1);
   runtimeState.delete(c.req.param('id'));
-  store.save();
+  await store.save();
   return c.json({ ok: true });
 });
 
@@ -312,7 +312,7 @@ hono.post("/api/settings", async (c) => {
   if (body.telegramToken === null) s.settings.telegramToken = "";
   if (typeof body.telegramChatId === "string") s.settings.telegramChatId = body.telegramChatId.trim();
   if (typeof body.soundEnabled === "boolean") s.settings.soundEnabled = body.soundEnabled;
-  store.save();
+  await store.save();
   return c.json({ ok: true });
 });
 
@@ -329,7 +329,7 @@ hono.get("/api/telegram/detect-chat", async (c) => {
     const chat = msgs[msgs.length - 1].message.chat;
     const s = store.load();
     s.settings.telegramChatId = String(chat.id);
-    store.save();
+    await store.save();
     return c.json({ ok: true, chatId: String(chat.id), name: chat.first_name || chat.title || "" });
   } catch (e) {
     return c.json({ ok: false, error: e.message });
