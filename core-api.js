@@ -127,7 +127,10 @@ function fmtNum(v) {
 function describeOperand(operand) {
   if (!operand) return "?";
   if (operand.kind === "value") return fmtNum(Number(operand.value));
-  const spec = operand.kind === "indicator" ? operand.spec : operand;
+  const spec = operand.kind === "indicator"
+    ? (operand.spec || (operand.type ? operand : null))
+    : operand;
+  if (!spec || !spec.type) return "?";
   const def = INDICATORS[spec.type];
   if (!def) return spec.type;
   const base = def.label.split(" (")[0];
@@ -148,6 +151,7 @@ async function engineTick() {
   engineBusy = true;
   const now = Date.now();
   try {
+    if (process.env.TURSO_HTTP === "1") await store.reload();
     const s = store.load();
     const active = s.alerts.filter(a => a.enabled && a.status === "active");
 
@@ -253,13 +257,23 @@ function validateAlert(body) {
   return null;
 }
 
+function normalizeLeft(left) {
+  if (!left || left.type) return left;
+  if (left.kind === "indicator" && left.spec) return left.spec;
+  if (left.kind === "indicator" && left.type) {
+    const { kind, ...spec } = left;
+    return spec;
+  }
+  return left;
+}
+
 function alertFromBody(body, existing) {
   return {
     id: existing ? existing.id : crypto.randomUUID(),
     createdAt: existing ? existing.createdAt : Date.now(),
     symbol: body.symbol.trim().toUpperCase(),
     resolution: body.resolution,
-    left: body.left,
+    left: normalizeLeft(body.left),
     op: body.op,
     right: body.right,
     trigger: body.trigger,

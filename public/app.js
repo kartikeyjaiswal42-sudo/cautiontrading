@@ -357,7 +357,10 @@ function setLegend(html) { $("legend").innerHTML = html; }
 function describeOperandUI(operand) {
   if (!operand) return "?";
   if (operand.kind === "value") return fmt(Number(operand.value));
-  const spec = operand.kind === "indicator" ? operand.spec : operand;
+  const spec = operand.kind === "indicator"
+    ? (operand.spec || (operand.type ? operand : null))
+    : operand;
+  if (!spec || !spec.type) return "?";
   const def = META.indicators[spec.type];
   if (!def) return spec.type;
   const base = def.label.split(" (")[0];
@@ -965,11 +968,15 @@ async function refreshAlerts() {
     if (!d.ok) return;
     ALERTS = d.alerts;
     renderAlerts();
-  } catch { /* ignore */ }
+  } catch (e) {
+    const box = $("alerts-list");
+    if (box) box.innerHTML = `<div class="empty err">Could not load alerts.</div>`;
+  }
 }
 
 function renderAlerts() {
   const box = $("alerts-list");
+  try {
   const watching = ALERTS.filter(a => a.enabled && a.status === "active").length;
   $("alert-count").textContent = ALERTS.length ? `(${watching})` : "";
   if (!ALERTS.length) {
@@ -1036,6 +1043,9 @@ function renderAlerts() {
       }
     });
   });
+  } catch (e) {
+    box.innerHTML = `<div class="empty err">Alert list error — try refreshing.</div>`;
+  }
 }
 
 // ==================== FIRED LOG ====================

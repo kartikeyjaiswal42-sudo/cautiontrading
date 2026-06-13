@@ -229,9 +229,30 @@ hono.post("/api/series", async (c) => {
   }
 });
 
-hono.get("/api/alerts", (c) => {
+hono.get("/api/alerts", async (c) => {
+  await store.reload();
   const s = store.load();
-  const alerts = s.alerts.map(a => ({ ...a, runtime: runtimeState.get(a.id) || {} }));
+  const now = Date.now();
+  const alerts = await Promise.all(s.alerts.map(async (a) => {
+    let runtime = runtimeState.get(a.id) || {};
+    if (a.enabled && a.status === "active" && !runtime.lastChecked) {
+      try {
+        const candles = await getCandlesAny(a.symbol, a.resolution, barsNeeded(a));
+        const st = {};
+        const r = evaluateAlert({ ...a, trigger: "every" }, candles, st, now);
+        runtime = {
+          lastChecked: now,
+          leftValue: r.leftValue,
+          rightValue: r.rightValue,
+          lastPrice: candles.length ? candles[candles.length - 1].close : null,
+          lastError: r.reason === "indicator warming up" ? null : (r.reason || null),
+        };
+      } catch (e) {
+        runtime = { lastError: e.message, lastChecked: now };
+      }
+    }
+    return { ...a, runtime };
+  }));
   return c.json({ ok: true, alerts });
 });
 
@@ -286,11 +307,13 @@ hono.delete("/api/alerts/:id", async (c) => {
   return c.json({ ok: true });
 });
 
-hono.get("/api/fired", (c) => {
+hono.get("/api/fired", async (c) => {
+  await store.reload();
   return c.json({ ok: true, fired: store.load().fired.slice(0, 100) });
 });
 
-hono.get("/api/settings", (c) => {
+hono.get("/api/settings", async (c) => {
+  await store.reload();
   const { settings } = store.load();
   return c.json({
     ok: true,

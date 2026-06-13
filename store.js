@@ -167,9 +167,17 @@ async function init(opts = {}) {
   }
 
   // Load database content into memory state
+  await loadFromDb();
+  return state;
+}
+
+async function loadFromDb() {
+  if (!client) {
+    state = JSON.parse(JSON.stringify(DEFAULTS));
+    return state;
+  }
   state = JSON.parse(JSON.stringify(DEFAULTS));
 
-  // Load settings
   const settingsRows = await client.execute("SELECT key, value FROM settings");
   for (const row of settingsRows.rows) {
     if (row.key === "soundEnabled") {
@@ -179,7 +187,6 @@ async function init(opts = {}) {
     }
   }
 
-  // Load alerts
   const alertsRows = await client.execute("SELECT * FROM alerts");
   for (const row of alertsRows.rows) {
     state.alerts.push({
@@ -199,7 +206,6 @@ async function init(opts = {}) {
     });
   }
 
-  // Load fired (newest first, capped)
   const firedRows = await client.execute("SELECT * FROM fired ORDER BY time DESC LIMIT 300");
   for (const row of firedRows.rows) {
     state.fired.push({
@@ -217,6 +223,12 @@ async function init(opts = {}) {
   }
 
   return state;
+}
+
+/** Workers: re-read Turso so all isolates see the same alerts/settings. */
+async function reload() {
+  if (!client || process.env.TURSO_HTTP !== "1") return load();
+  return loadFromDb();
 }
 
 function load() {
@@ -333,5 +345,5 @@ async function addFired(rec) {
   }
 }
 
-module.exports = { init, load, save, addFired };
+module.exports = { init, load, reload, save, addFired };
 module.exports.default = module.exports;
