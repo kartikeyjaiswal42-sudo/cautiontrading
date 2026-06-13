@@ -1,9 +1,9 @@
 // CautionTrading — Turso database persistence with in-memory write-through cache
-const fs = require("fs");
-const path = require("path");
 
-// Load .env relative to store.js directory
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+// Load .env (local dev only — skipped on Workers where dotenv is absent)
+if (typeof process !== "undefined" && process.env.TURSO_HTTP !== "1") {
+  try { require("dotenv").config({ path: require("path").join(__dirname, ".env") }); } catch { /* no dotenv */ }
+}
 
 const DEFAULTS = {
   alerts: [],
@@ -19,19 +19,24 @@ let state = null;
 let client = null;
 let saveTimer = null;
 
-async function init() {
+async function init(opts = {}) {
   if (state) return state;
 
-  const { createClient } = require("@libsql/client");
-  
-  if (!process.env.TURSO_DB_URL) {
+  const url = opts.url || process.env.TURSO_DB_URL;
+  const token = opts.token || process.env.TURSO_DB_TOKEN;
+  const useHttp = opts.useHttp || process.env.TURSO_HTTP === "1";
+
+  if (!url) {
     throw new Error("TURSO_DB_URL is not set in environment variables / .env");
   }
 
-  client = createClient({
-    url: process.env.TURSO_DB_URL,
-    authToken: process.env.TURSO_DB_TOKEN,
-  });
+  if (useHttp) {
+    const { createHttpClient } = require("./turso-http");
+    client = createHttpClient(url, token);
+  } else {
+    const { createClient } = require("@libsql/client");
+    client = createClient({ url, authToken: token });
+  }
 
   // Create settings table
   await client.execute(`
@@ -88,12 +93,15 @@ async function init() {
     needsMigration = true;
   }
 
-  const localFile = path.join(__dirname, "data", "store.json");
-  if (needsMigration && fs.existsSync(localFile)) {
+  if (needsMigration && !useHttp) {
     try {
-      console.log("Empty Turso DB detected. Migrating local store.json data...");
-      const raw = fs.readFileSync(localFile, "utf8");
-      const localData = JSON.parse(raw);
+      const fs = require("fs");
+      const path = require("path");
+      const file = path.join(__dirname, "data", "store.json");
+      if (fs.existsSync(file)) {
+        console.log("Empty Turso DB detected. Migrating local store.json data...");
+        const raw = fs.readFileSync(file, "utf8");
+        const localData = JSON.parse(raw);
 
       // Save settings
       if (localData.settings) {
@@ -152,6 +160,7 @@ async function init() {
         await client.batch(tx, "write");
       }
       console.log("Migration from local store.json to Turso DB complete!");
+      }
     } catch (err) {
       console.error("Failed to migrate local store.json:", err.message);
     }
@@ -319,3 +328,4 @@ async function addFired(rec) {
 }
 
 module.exports = { init, load, save, addFired };
+module.exports.default = module.exports;

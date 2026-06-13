@@ -1,0 +1,21 @@
+name = "cautiontrading"
+account_id = "225f2c3132920804e70224f830c9aadc"
+main = "worker-boot.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "public"
+binding = "ASSETS"
+
+[[durable_objects.bindings]]
+name = "ALERT_ENGINE"
+class_name = "AlertEngine"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AlertEngine"]
+
+[vars]
+DELTA_BASE = "https://api.india.delta.exchange"
+TURSO_HTTP = "1"
