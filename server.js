@@ -3,9 +3,12 @@ const express = require("express");
 const path = require("path");
 const crypto = require("crypto");
 
+require("dotenv").config({ path: path.join(__dirname, ".env") });
+
 const { indicatorMeta, INDICATORS, computeSeries } = require("./indicators");
 const { OPS, evaluateAlert, resolutionSeconds, barsNeeded } = require("./engine");
 const store = require("./store");
+const india = require("./sources/india");
 
 const PORT = process.env.PORT || 8899;
 const DELTA_BASE = process.env.DELTA_BASE || "https://api.india.delta.exchange";
@@ -77,6 +80,12 @@ async function getCandles(symbol, resolution, bars) {
     .sort((a, b) => a.time - b.time);
   candleCache.set(key, { at: Date.now(), candles });
   return candles;
+}
+
+// route by exchange: NSE:* → Yahoo-backed Indian source, everything else → Delta
+async function getCandlesAny(symbol, resolution, bars) {
+  if (india.isIndia(symbol)) return india.getCandles(symbol, resolution, bars);
+  return getCandles(symbol, resolution, bars);
 }
 
 // ---------------- SSE (live push to the browser) ----------------
@@ -185,7 +194,7 @@ async function engineTick() {
     for (const g of groups.values()) {
       let candles;
       try {
-        candles = await getCandles(g.symbol, g.resolution, g.bars);
+        candles = await getCandlesAny(g.symbol, g.resolution, g.bars);
       } catch (e) {
         for (const a of g.alerts) {
           const st = rtState(a.id);
@@ -253,13 +262,15 @@ app.get("/api/meta", (req, res) => {
     indicators: indicatorMeta(),
     ops: OPS,
     resolutions: ["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "1d"],
+    nseResolutions: india.RESOLUTIONS,
     checkIntervalSec: CHECK_INTERVAL_MS / 1000,
   });
 });
 
 app.get("/api/symbols", async (req, res) => {
   try {
-    res.json({ ok: true, symbols: await getSymbols() });
+    const delta = (await getSymbols()).map(x => ({ ...x, src: "delta" }));
+    res.json({ ok: true, symbols: [...delta, ...india.listSymbols()] });
   } catch (e) {
     res.status(502).json({ ok: false, error: e.message });
   }
@@ -289,6 +300,134 @@ app.get("/api/tickers", async (req, res) => {
   }
 });
 
+// Order book (Delta only — Indian depth needs a broker API)
+const obCache = new Map();
+app.get("/api/orderbook", async (req, res) => {
+  const symbol = String(req.query.symbol || "");
+  if (india.isIndia(symbol)) return res.json({ ok: false, unsupported: true });
+  try {
+    const hit = obCache.get(symbol);
+    if (hit && Date.now() - hit.at < 1200) return res.json(hit.payload);
+    const d = await fetchJson(`${DELTA_BASE}/v2/l2orderbook/${encodeURIComponent(symbol)}?depth=12`);
+    const payload = {
+      ok: true,
+      buy: (d.result.buy || []).map(l => ({ price: +l.price, size: +l.size })),
+      sell: (d.result.sell || []).map(l => ({ price: +l.price, size: +l.size })),
+    };
+    obCache.set(symbol, { at: Date.now(), payload });
+    res.json(payload);
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// Recent trades (Delta only)
+const trCache = new Map();
+app.get("/api/recent-trades", async (req, res) => {
+  const symbol = String(req.query.symbol || "");
+  if (india.isIndia(symbol)) return res.json({ ok: false, unsupported: true });
+  try {
+    const hit = trCache.get(symbol);
+    if (hit && Date.now() - hit.at < 1500) return res.json(hit.payload);
+    const d = await fetchJson(`${DELTA_BASE}/v2/trades/${encodeURIComponent(symbol)}`);
+    const payload = {
+      ok: true,
+      trades: (d.result || []).slice(0, 30).map(t => ({
+        price: +t.price,
+        size: +t.size,
+        time: Math.floor(t.timestamp / 1000), // µs → ms
+        side: t.seller_role === "taker" ? "sell" : "buy",
+      })),
+    };
+    trCache.set(symbol, { at: Date.now(), payload });
+    res.json(payload);
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// Detailed single-symbol ticker for the Delta-style stats strip
+const tkCache = new Map();
+app.get("/api/ticker", async (req, res) => {
+  const symbol = String(req.query.symbol || "");
+  try {
+    const hit = tkCache.get(symbol);
+    if (hit && Date.now() - hit.at < 3000) return res.json(hit.payload);
+    let payload;
+    if (india.isIndia(symbol)) {
+      const q = await india.getQuote(symbol);
+      payload = { ok: true, src: "nse", ...q };
+    } else {
+      const d = await fetchJson(`${DELTA_BASE}/v2/tickers/${encodeURIComponent(symbol)}`);
+      const t = d.result;
+      payload = {
+        ok: true,
+        src: "delta",
+        price: +t.close,
+        changePct: t.open ? ((+t.close - +t.open) / +t.open) * 100 : null,
+        high: +t.high, low: +t.low,
+        turnoverUsd: +t.turnover_usd || null,
+        oi: t.oi !== undefined ? +t.oi : null,
+        fundingRate: t.funding_rate !== undefined ? +t.funding_rate * 100 : null,
+        indexPrice: t.spot_price !== undefined ? +t.spot_price : null,
+        markPrice: t.mark_price !== undefined ? +t.mark_price : null,
+      };
+    }
+    tkCache.set(symbol, { at: Date.now(), payload });
+    res.json(payload);
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// Full product spec for the Contract Details panel (Delta only)
+const prodCache = new Map();
+app.get("/api/product", async (req, res) => {
+  const symbol = String(req.query.symbol || "");
+  if (india.isIndia(symbol)) return res.json({ ok: false, unsupported: true });
+  try {
+    const hit = prodCache.get(symbol);
+    if (hit && Date.now() - hit.at < 10 * 60 * 1000) return res.json(hit.payload);
+    const d = await fetchJson(`${DELTA_BASE}/v2/products/${encodeURIComponent(symbol)}`);
+    const p = d.result;
+    const payload = {
+      ok: true,
+      product: {
+        symbol: p.symbol,
+        description: p.description || p.short_description || "",
+        type: p.contract_type || "",
+        contractValue: p.contract_value,
+        contractUnit: p.contract_unit_currency,
+        tickSize: p.tick_size,
+        makerFee: p.maker_commission_rate,
+        takerFee: p.taker_commission_rate,
+        initialMargin: p.initial_margin,
+        maintenanceMargin: p.maintenance_margin,
+        maxLeverageNotional: p.max_leverage_notional,
+        fundingMethod: p.funding_method,
+        settlingAsset: p.settling_asset && p.settling_asset.symbol,
+        quotingAsset: p.quoting_asset && p.quoting_asset.symbol,
+        underlying: p.underlying_asset && p.underlying_asset.symbol,
+        launchTime: p.launch_time,
+        settlementTime: p.settlement_time,
+      },
+    };
+    prodCache.set(symbol, { at: Date.now(), payload });
+    res.json(payload);
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
+// Search any Indian stock by name (beyond the built-in F&O list)
+app.get("/api/india-search", async (req, res) => {
+  try {
+    res.json({ ok: true, results: await india.search(String(req.query.q || "")) });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
+
 // Candles + computed indicator series for the chart
 app.post("/api/series", async (req, res) => {
   try {
@@ -302,7 +441,7 @@ app.post("/api/series", async (req, res) => {
         if (Number.isFinite(n)) bars = Math.max(bars, 300 + n * 5);
       }
     }
-    const candles = await getCandles(symbol, resolution, bars);
+    const candles = await getCandlesAny(symbol, resolution, bars);
     const series = (specs || []).slice(0, 8).map(spec => {
       try {
         return computeSeries(spec, candles).map(v => (Number.isFinite(v) ? v : null));
@@ -466,7 +605,7 @@ app.post("/api/preview", async (req, res) => {
     const err = validateAlert(body);
     if (err) return res.json({ ok: false, error: err });
     const fake = alertFromBody(body);
-    const candles = await getCandles(fake.symbol, fake.resolution, barsNeeded(fake));
+    const candles = await getCandlesAny(fake.symbol, fake.resolution, barsNeeded(fake));
     const st = {};
     const r = evaluateAlert({ ...fake, trigger: "every" }, candles, st, Date.now());
     res.json({
@@ -481,7 +620,12 @@ app.post("/api/preview", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`CautionTrading running → http://localhost:${PORT}`);
-  engineTick();
+store.init().then(() => {
+  app.listen(PORT, () => {
+    console.log(`CautionTrading running → http://localhost:${PORT}`);
+    engineTick();
+  });
+}).catch(err => {
+  console.error("Failed to initialize database store:", err);
+  process.exit(1);
 });

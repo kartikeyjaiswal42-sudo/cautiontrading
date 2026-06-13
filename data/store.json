@@ -5,5 +5,18 @@
     "telegramChatId": "",
     "soundEnabled": true
   },
-  "fired": []
+  "fired": [
+    {
+      "id": "f1461d8a-ca2e-443c-8ae3-067f943aa748",
+      "alertId": "65a75bd6-e1e0-4075-a251-07628a62cef9",
+      "time": 1781326907630,
+      "symbol": "BTCUSD",
+      "resolution": "5m",
+      "message": "PLAYWRIGHT TEST ALERT",
+      "condition": "BTCUSD 5m: Price > 1.00",
+      "leftValue": 63470,
+      "rightValue": 1,
+      "price": 63470
+    }
+  ]
 }
