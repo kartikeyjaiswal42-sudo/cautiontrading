@@ -4,7 +4,8 @@
   "description": "Live technical-indicator alerts for Delta Exchange — in-app alarm + Telegram",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "deploy": "bash deploy.sh"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",
